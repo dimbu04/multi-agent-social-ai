@@ -18,7 +18,7 @@ This project takes a blog URL and:
 
 ## 🧠 Architecture (LangGraph Style)
 
-![Architecture](diagram.png)
+![Architecture](diagram.jpeg)
 
 ### Flow:
 
