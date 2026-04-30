@@ -1,213 +1,537 @@
 import streamlit as st
 import json
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+import warnings
+warnings.filterwarnings("ignore")
+
 from main import run_pipeline, chat_refine
-from post_linkedin_playwright import post_to_linkedin
 
-st.set_page_config(page_title="AI Social Media Generator", layout="wide")
 
-# ---------------- TITLE ----------------
-st.markdown("<h1 style='text-align: center;'>🚀 Multi-Agent Social Media Content Generator</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center;'>Generate LinkedIn, Twitter, Instagram & Reel content from any URL</p>", unsafe_allow_html=True)
+# ---------------- PAGE ----------------
 
-# ---------------- SESSION STATE ----------------
-if "result" not in st.session_state:
-    st.session_state.result = None
-
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-if "current_content" not in st.session_state:
-    st.session_state.current_content = ""
-
-if "final_content" not in st.session_state:
-    st.session_state.final_content = None
-
-# ---------------- INPUT ----------------
-url = st.text_input("🔗 Enter Blog URL")
-
-platform = st.selectbox(
-    "📱 Select Platform",
-    ["All", "LinkedIn", "Twitter", "Instagram", "Reel"]
+st.set_page_config(
+    page_title="AI Social Media Generator",
+    layout="wide"
 )
 
-# ---------------- GENERATE ----------------
-if st.button("✨ Generate Content"):
-    if not url:
-        st.warning("⚠️ Please enter a URL")
-    else:
-        with st.spinner("🤖 AI Agents are working..."):
-            st.session_state.result = run_pipeline(url)
-            st.session_state.chat_history = []
-            st.session_state.current_content = ""
-            st.session_state.final_content = None
+st.title("🚀 Multi-Agent Social Media Generator")
+st.caption(
+"Generate • Refine • Publish • Auto Post"
+)
 
-# ---------------- SHOW OUTPUT ----------------
+
+# ---------- DASHBOARD ----------
+
+c1,c2,c3,c4,c5 = st.columns(5)
+
+c1.metric("Platforms","3")
+c2.metric("Agents","5")
+c3.metric("Auto Posting","Enabled")
+c4.metric("Execution","Parallel")
+c5.metric("Posts Automated","3")
+
+
+# ---------------- SESSION ----------------
+
+defaults={
+"result":None,
+"current_content":"",
+"final_content":None
+}
+
+for k,v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k]=v
+
+
+
+# ------------ SUBPROCESS RUNNER ------------
+
+def run_post(script,content):
+
+    try:
+
+        r=subprocess.run(
+            [sys.executable,script,content],
+            capture_output=True,
+            text=True
+        )
+
+        out=r.stdout.strip()
+        err=r.stderr.strip()
+
+        if r.returncode==0 and "False" not in out:
+            return True,out
+
+        return False,out or err
+
+    except Exception as e:
+        return False,str(e)
+
+
+
+# ---------------- GENERATE ----------------
+
+st.divider()
+
+url=st.text_input(
+"🔗 Enter Blog URL"
+)
+
+platform=st.selectbox(
+"Choose Platform",
+["All","LinkedIn","Twitter","Instagram"]
+)
+
+
+if st.button("✨ Generate Content"):
+
+    if not url:
+        st.warning("Enter URL")
+
+    else:
+
+        progress=st.progress(0)
+        agent_log=st.empty()
+
+        agent_log.info(
+        "🔎 Scraper Agent Running..."
+        )
+        progress.progress(20)
+
+        time.sleep(.6)
+
+        agent_log.info(
+        "✍ Content Agents Generating..."
+        )
+
+        result=run_pipeline(
+            url,
+            platform
+        )
+
+        progress.progress(75)
+
+        time.sleep(.6)
+
+        agent_log.success(
+        "✅ Content Generation Complete"
+        )
+
+        progress.progress(100)
+
+        st.session_state.result=result
+
+
+
+linkedin_content=""
+twitter_content=""
+instagram_content=""
+combined=""
+
+
+
+# ---------------- SHOW CONTENT ----------------
+
 if st.session_state.result:
 
-    result = st.session_state.result
+    result=st.session_state.result
 
-    st.success("✅ Content Generated Successfully!")
+    st.success(
+      "Generated Successfully"
+    )
 
-    with st.expander("📌 Summary"):
-        st.write(result.get("summary", ""))
 
-    with st.expander("🎯 Strategy"):
-        st.write(result.get("strategy", ""))
+    if platform=="All":
 
-    with st.expander("🏷️ Hashtags"):
-        st.write(result.get("hashtags", ""))
+        t1,t2,t3=st.tabs(
+         ["LinkedIn","Twitter","Instagram"]
+        )
 
-    st.divider()
+        linkedin_content=result["linkedin"]
+        twitter_content=result["twitter"]
+        instagram_content=result["instagram"]
 
-    # ---------------- CONTENT ----------------
-    if platform == "All":
-        col1, col2 = st.columns(2)
 
-        with col1:
-            st.subheader("💼 LinkedIn")
-            st.text_area("linkedin_output", result.get("linkedin", ""), height=250)
-
-            st.subheader("🐦 Twitter")
-            st.text_area("twitter_output", result.get("twitter", ""), height=250)
-
-        with col2:
-            st.subheader("📸 Instagram")
-            st.text_area("instagram_output", result.get("instagram", ""), height=250)
-
-            st.subheader("🎬 Reel Script")
-            st.text_area("reel_output", result.get("reel", ""), height=250)
-
-        selected_content = f"""
-LINKEDIN:
-{result.get("linkedin")}
-
-TWITTER:
-{result.get("twitter")}
-
-INSTAGRAM:
-{result.get("instagram")}
-
-REEL:
-{result.get("reel")}
-"""
-    else:
-        selected_content = result.get(platform.lower(), "")
-        st.subheader(f"📄 {platform} Content")
-        st.text_area("single_output", selected_content, height=300)
-
-    if st.session_state.current_content == "":
-        st.session_state.current_content = selected_content
-
-    # ---------------- CHAT ----------------
-    st.divider()
-    st.subheader("💬 AI Content Assistant")
-
-    st.text_area("📝 Current Content", st.session_state.current_content, height=250)
-
-    user_input = st.text_input("💬 Modify content", key="chat_input")
-
-    if st.button("Send"):
-        if user_input:
-            updated = chat_refine(
-                st.session_state.current_content,
-                user_input,
-                st.session_state.chat_history
+        with t1:
+            st.text_area(
+              "LinkedIn Content",
+              linkedin_content,
+              height=260
             )
 
-            st.session_state.chat_history.append(("User", user_input))
-            st.session_state.chat_history.append(("AI", updated))
-            st.session_state.current_content = updated
+        with t2:
+            st.text_area(
+              "Twitter Content",
+              twitter_content,
+              height=260
+            )
 
-    st.subheader("🗨 Conversation")
-    for role, msg in st.session_state.chat_history:
-        if role == "User":
-            st.write(f"🧑 You: {msg}")
-        else:
-            st.write(f"🤖 AI: {msg}")
+        with t3:
+            st.text_area(
+              "Instagram Content",
+              instagram_content,
+              height=260
+            )
 
-    # ---------------- FINALIZE ----------------
-    st.divider()
-    st.subheader("✅ Final Approval")
 
-    if st.button("🚀 Finalize Content"):
-        st.session_state.final_content = st.session_state.current_content
-        st.success("Content Finalized!")
+        combined=f"""
+{linkedin_content}
 
-    if st.session_state.final_content:
-        st.text_area("📌 Final Content", st.session_state.final_content, height=300)
 
-    # ---------------- POSTING ----------------
-    st.divider()
-    st.subheader("🚀 Post to Social Media")
+{twitter_content}
 
-    
-    twitter_token = st.text_input("Twitter Token", type="password")
-    insta_token = st.text_input("Instagram Token", type="password")
-    ig_user = st.text_input("Instagram User ID")
-    image_url = st.text_input("Image URL")
 
-    col1, col2, col3 = st.columns(3)
-
-    # LinkedIn
-    with col1:
-        if st.button("Post LinkedIn"):
-            if not st.session_state.final_content:
-                st.warning("Finalize content first")
-            else:
-                with st.spinner("Posting to LinkedIn..."):
-                    post_to_linkedin(st.session_state.final_content)
-
-                st.success("✅ Posted to LinkedIn successfully!")
-
-    # Twitter
-    with col2:
-        if st.button("Post Twitter"):
-            if not st.session_state.final_content:
-                st.warning("Finalize first")
-            elif not twitter_token:
-                st.warning("Enter token")
-            else:
-                res = post_to_twitter(
-                    st.session_state.final_content,
-                    twitter_token
-                )
-                st.success("Posted to Twitter")
-                st.write(res)
-
-    # Instagram
-    with col3:
-        if st.button("Post Instagram"):
-            if not st.session_state.final_content:
-                st.warning("Finalize first")
-            elif not insta_token or not ig_user or not image_url:
-                st.warning("Enter all details")
-            else:
-                res = post_to_instagram(
-                    st.session_state.final_content,
-                    insta_token,
-                    ig_user,
-                    image_url
-                )
-                st.success("Posted to Instagram")
-                st.write(res)
-
-    # ---------------- DOWNLOAD ----------------
-    output_text = f"""
-SUMMARY:
-{result.get("summary")}
-
-STRATEGY:
-{result.get("strategy")}
-
-HASHTAGS:
-{result.get("hashtags")}
-
-LINKEDIN:
-{result.get("linkedin")}
+{instagram_content}
 """
 
-    st.divider()
-    st.subheader("⬇️ Download Results")
+    else:
 
-    st.download_button("Download TXT", output_text, "content.txt")
-    st.download_button("Download JSON", json.dumps(result), "content.json")
+        single=result[
+            platform.lower()
+        ]
+
+        linkedin_content=single
+        twitter_content=single
+        instagram_content=single
+
+        combined=single
+
+        st.text_area(
+            "Generated Content",
+            single,
+            height=300
+        )
+
+
+
+# ------------ REFINE ------------
+
+st.divider()
+
+st.subheader(
+"💬 AI Content Assistant"
+)
+
+if combined:
+
+    st.text_area(
+      "Current Content",
+      combined,
+      height=250
+    )
+
+
+edit=st.text_input(
+"Modify Content"
+)
+
+if st.button("Send") and edit:
+
+    updated=chat_refine(
+      combined,
+      edit,
+      []
+    )
+
+    st.write(updated)
+
+
+if st.button(
+"🚀 Finalize Content"
+):
+    st.success(
+      "Content Finalized"
+    )
+
+
+
+# -------- Agent Activity --------
+
+st.divider()
+
+st.subheader(
+"🤖 Agent Activity"
+)
+
+st.info("""
+Scraper Agent Ready  
+Content Agents Ready  
+Publisher Agents Ready
+""")
+
+
+# ------------ PUBLISH CENTER ------------
+
+st.divider()
+
+st.subheader(
+"📢 Publishing Center"
+)
+
+a,b,c,d=st.columns(4)
+
+
+
+# -------- INDIVIDUAL --------
+
+with a:
+
+    if st.button("💼 LinkedIn"):
+
+        ok,msg=run_post(
+          "post_linkedin_playwright.py",
+          linkedin_content
+        )
+
+        if ok:
+            st.success(msg)
+        else:
+            st.error(msg)
+
+
+
+with b:
+
+    if st.button("🐦 Twitter"):
+
+        ok,msg=run_post(
+         "post_twitter_playwright.py",
+         twitter_content
+        )
+
+        if ok:
+            st.success(msg)
+        else:
+            st.error(msg)
+
+
+
+with c:
+
+    if st.button("📸 Instagram"):
+
+        ok,msg=run_post(
+          "post_instagram_playwright.py",
+          instagram_content
+        )
+
+        if ok:
+            st.success(msg)
+        else:
+            st.error(msg)
+
+
+
+
+# ---------- PARALLEL JOBS ----------
+
+def linkedin_job(content):
+    return run_post(
+       "post_linkedin_playwright.py",
+       content
+    )
+
+
+def twitter_job(content):
+    return run_post(
+       "post_twitter_playwright.py",
+       content
+    )
+
+
+def instagram_job(content):
+    return run_post(
+      "post_instagram_playwright.py",
+      content
+    )
+
+
+
+
+# ---------- MULTI AGENT PUBLISH ----------
+
+with d:
+
+    if st.button(
+      "🚀 Launch Multi-Agent Publishing"
+    ):
+
+        if not st.session_state.result:
+            st.warning(
+              "Generate content first"
+            )
+            st.stop()
+
+
+        bar=st.progress(0)
+
+        launch_status=st.empty()
+
+        linkedin_status=st.empty()
+        twitter_status=st.empty()
+        insta_status=st.empty()
+
+
+        launch_status.info(
+          "🚀 Launching Publisher Agents..."
+        )
+
+        bar.progress(10)
+
+        linkedin_status.warning(
+         "🟡 LinkedIn Posting..."
+        )
+
+        twitter_status.info(
+         "⏳ Twitter Waiting..."
+        )
+
+        insta_status.info(
+         "⏳ Instagram Waiting..."
+        )
+
+
+        with ThreadPoolExecutor(
+            max_workers=3
+        ) as ex:
+
+            f1=ex.submit(
+                linkedin_job,
+                result["linkedin"]
+            )
+
+            f2=ex.submit(
+                twitter_job,
+                result["twitter"]
+            )
+
+            f3=ex.submit(
+                instagram_job,
+                result["instagram"]
+            )
+
+
+            # LinkedIn
+            li=f1.result()
+
+            bar.progress(35)
+
+            if li[0]:
+                linkedin_status.success(
+                 "🟢 LinkedIn Done"
+                )
+            else:
+                linkedin_status.error(
+                 "🔴 LinkedIn Failed"
+                )
+
+
+            # Twitter starts
+            twitter_status.warning(
+              "🟡 Twitter Posting..."
+            )
+
+            tw=f2.result()
+
+            bar.progress(65)
+
+            if tw[0]:
+                twitter_status.success(
+                 "🟢 Twitter Done"
+                )
+            else:
+                twitter_status.error(
+                 "🔴 Twitter Failed"
+                )
+
+
+            # Insta starts
+            insta_status.warning(
+              "🟡 Instagram Posting..."
+            )
+
+            ig=f3.result()
+
+            bar.progress(90)
+
+            if ig[0]:
+                insta_status.success(
+                  "🟢 Instagram Done"
+                )
+            else:
+                insta_status.error(
+                  "🔴 Instagram Failed"
+                )
+
+
+        bar.progress(100)
+
+        launch_status.success(
+         "✅ Publisher Agents Completed"
+        )
+
+
+        st.write("## Results")
+
+
+        if li[0]:
+            st.success(
+             "LinkedIn Posted"
+            )
+        else:
+            st.error(li[1])
+
+
+        if tw[0]:
+            st.success(
+             "Twitter Posted"
+            )
+        else:
+            st.error(tw[1])
+
+
+        if ig[0]:
+            st.success(
+             "Instagram Posted"
+            )
+        else:
+            st.error(ig[1])
+
+
+        if li[0] and tw[0] and ig[0]:
+
+            st.balloons()
+
+            st.success(
+             "🎉 Posted To All Platforms"
+            )
+
+
+
+# ------------ DOWNLOADS ------------
+
+st.divider()
+
+if combined:
+
+    st.download_button(
+      "Download TXT",
+      combined,
+      "content.txt"
+    )
+
+
+if st.session_state.result:
+
+    st.download_button(
+      "Download JSON",
+      json.dumps(
+        st.session_state.result,
+        indent=2
+      ),
+      "content.json"
+    )

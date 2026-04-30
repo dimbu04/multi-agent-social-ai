@@ -1,0 +1,11 @@
+streamlit
+langchain
+langchain-groq
+langchain-openai
+langchain-huggingface
+sentence-transformers
+requests
+beautifulsoup4
+certifi
+python-dotenv
+playwright
